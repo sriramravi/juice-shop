@@ -22,6 +22,7 @@ LABEL maintainer="Bjoern Kimminich <bjoern.kimminich@owasp.org>" \
     org.repos.secret.key="ghp_BxjbeScwU6fv6vOASBOKU9YR17H5ye2bobwd" \
     org.opencontainers.image.revision=$VCS_REF \
     org.opencontainers.image.created=$BUILD_DATE
+    
 WORKDIR /juice-shop
 RUN addgroup --system --gid 1001 juicer && \
     adduser juicer --system --uid 1001 --ingroup juicer
