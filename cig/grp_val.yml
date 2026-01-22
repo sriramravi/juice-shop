@@ -1,0 +1,38 @@
+---
+# group_validation.yml - Validate and resolve group ID, then add to collection
+
+- name: Search for group by name in CheckmarxOne
+  uri:
+    url: "{{ checkmarx_base_url }}/api/access-management/groups?search={{ group_name | urlencode }}&limit=10"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ access_token }}"
+      Accept: "application/json; version=1.0"
+    status_code: 200
+  register: group_search_response
+
+- name: Extract exact matching group ID
+  set_fact:
+    current_group_id: >-
+      {%- set groups = group_search_response.json | default([]) -%}
+      {%- set exact_match = groups | selectattr('name', 'equalto', group_name) | list -%}
+      {%- if exact_match | length > 0 -%}
+      {{ exact_match[0].id }}
+      {%- else -%}
+      {{ none }}
+      {%- endif -%}
+
+- name: Fail if group does not exist
+  fail:
+    msg: |
+      Group '{{ group_name }}' not found in CheckmarxOne Access Management.
+      Available groups matching search: {{ group_search_response.json | map(attribute='name') | list | join(', ') }}
+  when: current_group_id is none
+
+- name: Add group ID to collection
+  set_fact:
+    checkmarx_group_ids: "{{ checkmarx_group_ids + [current_group_id] }}"
+
+- name: Log successful group resolution
+  debug:
+    msg: "Resolved group '{{ group_name }}' to ID: {{ current_group_id }}"
