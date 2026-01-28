@@ -1,0 +1,179 @@
+---
+# NowSecure MAST Application Onboarding
+
+- name: Validate required variables
+  assert:
+    that:
+      - nowsecure_api_token is defined
+      - nowsecure_api_token | length > 0
+      - nowsecure_platform is defined
+      - nowsecure_platform in ['ios', 'android']
+      - nowsecure_package is defined
+      - nowsecure_package | length > 0
+    fail_msg: |
+      Missing required variables for NowSecure onboarding:
+      - nowsecure_api_token: {{ nowsecure_api_token is defined }}
+      - nowsecure_platform: {{ nowsecure_platform | default('NOT SET') }}
+      - nowsecure_package: {{ nowsecure_package | default('NOT SET') }}
+    success_msg: "All required variables validated successfully"
+  tags:
+    - validation
+    - nowsecure
+
+- name: Display onboarding parameters
+  debug:
+    msg:
+      - "Platform: {{ nowsecure_platform }}"
+      - "Package: {{ nowsecure_package }}"
+      - "Group: {{ nowsecure_group | default('Using default group') }}"
+      - "Base URL: {{ nowsecure_base_url }}"
+  tags:
+    - debug
+    - nowsecure
+
+- name: Check if application already exists in NowSecure
+  uri:
+    url: "{{ nowsecure_base_url }}/app/{{ nowsecure_platform }}/{{ nowsecure_package }}{% if nowsecure_group %}?group={{ nowsecure_group }}{% endif %}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ nowsecure_api_token }}"
+    status_code:
+      - 200
+      - 404
+    return_content: yes
+  register: nowsecure_app_check
+  failed_when: false
+  tags:
+    - check
+    - nowsecure
+
+- name: Set application existence flag
+  set_fact:
+    nowsecure_app_exists: "{{ nowsecure_app_check.status == 200 }}"
+  tags:
+    - check
+    - nowsecure
+
+- name: Display application check result
+  debug:
+    msg: "Application {{ nowsecure_platform }}/{{ nowsecure_package }} {{ 'EXISTS' if nowsecure_app_exists else 'DOES NOT EXIST' }} in NowSecure"
+  tags:
+    - check
+    - nowsecure
+
+- name: Exit role if application already exists
+  block:
+    - name: Log application already exists
+      debug:
+        msg: |
+          Application {{ nowsecure_platform }}/{{ nowsecure_package }} already exists in NowSecure.
+          Skipping creation. Application details:
+          {{ nowsecure_app_check.json | to_nice_json }}
+    
+    - name: Set onboarding result
+      set_fact:
+        nowsecure_onboarding_result:
+          status: "already_exists"
+          platform: "{{ nowsecure_platform }}"
+          package: "{{ nowsecure_package }}"
+          message: "Application already exists in NowSecure"
+          app_data: "{{ nowsecure_app_check.json }}"
+    
+    - name: End role execution
+      meta: end_host
+  when:
+    - nowsecure_app_exists
+    - nowsecure_exit_if_exists
+  tags:
+    - check
+    - nowsecure
+
+- name: Create new application in NowSecure
+  block:
+    - name: Build application creation payload
+      set_fact:
+        nowsecure_create_payload:
+          platform: "{{ nowsecure_platform }}"
+          package: "{{ nowsecure_package }}"
+
+    - name: Add group to payload if specified
+      set_fact:
+        nowsecure_create_payload: "{{ nowsecure_create_payload | combine({'group': nowsecure_group}) }}"
+      when:
+        - nowsecure_group is defined
+        - nowsecure_group | length > 0
+
+    - name: Log creation payload
+      debug:
+        msg: "Creating application with payload: {{ nowsecure_create_payload | to_nice_json }}"
+      tags:
+        - debug
+
+    - name: Create application resource in NowSecure
+      uri:
+        url: "{{ nowsecure_base_url }}/app/"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ nowsecure_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body: "{{ nowsecure_create_payload }}"
+        status_code: 201
+        return_content: yes
+      register: nowsecure_create_response
+      tags:
+        - create
+        - nowsecure
+
+    - name: Display creation success
+      debug:
+        msg: |
+          Successfully created application in NowSecure:
+          Platform: {{ nowsecure_platform }}
+          Package: {{ nowsecure_package }}
+          Response: {{ nowsecure_create_response.json | to_nice_json }}
+      tags:
+        - create
+        - nowsecure
+
+    - name: Set onboarding result
+      set_fact:
+        nowsecure_onboarding_result:
+          status: "created"
+          platform: "{{ nowsecure_platform }}"
+          package: "{{ nowsecure_package }}"
+          message: "Application successfully created in NowSecure"
+          app_data: "{{ nowsecure_create_response.json }}"
+
+  when: not nowsecure_app_exists
+  rescue:
+    - name: Handle creation failure
+      debug:
+        msg: |
+          Failed to create application in NowSecure:
+          Error: {{ nowsecure_create_response.msg | default('Unknown error') }}
+          Status: {{ nowsecure_create_response.status | default('N/A') }}
+          Response: {{ nowsecure_create_response.content | default('No content') }}
+
+    - name: Set failure result
+      set_fact:
+        nowsecure_onboarding_result:
+          status: "failed"
+          platform: "{{ nowsecure_platform }}"
+          package: "{{ nowsecure_package }}"
+          message: "Failed to create application"
+          error: "{{ nowsecure_create_response.msg | default('Unknown error') }}"
+
+    - name: Fail if error handling is strict
+      fail:
+        msg: "NowSecure application creation failed: {{ nowsecure_create_response.msg | default('Unknown error') }}"
+      when: nowsecure_fail_on_error
+  tags:
+    - create
+    - nowsecure
+
+- name: Display final onboarding result
+  debug:
+    msg: "{{ nowsecure_onboarding_result | to_nice_json }}"
+  tags:
+    - nowsecure
