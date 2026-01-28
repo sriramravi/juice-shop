@@ -1,0 +1,17 @@
+---
+# Default variables for NowSecure onboarding
+
+# NowSecure API configuration
+nowsecure_base_url: "https://lab-api.nowsecure.com"
+
+# Application details (to be overridden from calling playbook)
+nowsecure_platform: ""  # "ios" or "android"
+nowsecure_package: ""   # Bundle ID for iOS, Package name for Android
+nowsecure_group: ""     # UUID of the group (optional if user belongs to only one group)
+
+# API token (should be passed securely from main.yml)
+nowsecure_api_token: ""
+
+# Behavior flags
+nowsecure_exit_if_exists: true  # Exit role if app already exists
+nowsecure_fail_on_error: true   # Fail playbook on API errors
